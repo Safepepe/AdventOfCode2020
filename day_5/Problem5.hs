@@ -1,4 +1,5 @@
 module Problem5 where
+import Data5 (inputIO)
 import Data.List (sort)
 
 {-Parameters-}
@@ -8,26 +9,14 @@ totalColumns = 8 --0 through 7
 lastColumn = 7
 rowCodeLength = 7
 
-input :: IO String
-input = readFile "data5.txt"
-
-answer1 :: IO ()
-answer1 = input >>= (print . getMaxID)
-  where getMaxID = foldr max 0 . map (toID . toSeat) .lines
-
-answer2 :: IO ()
-answer2 = input >>= ( print . deduceMyID . sortIDs )
-  where sortIDs = sort . map (toID . toSeat) . lines
-        deduceMyID xs = snd $ foldr func (last xs, last xs) xs
-        func x (current, iD)  = if current - x >= 2 then (x, current -1)  else (x, iD)
-
+{-Part One-}
 type Row = Int
 type Column = Int
 type Seat = (Row, Column)
 type ID = Int
 type BoardingPass = String
 
---I assume that I work on the first part on the ticket string
+-------------------------------'Unsafe' functions-------------------------------
 toRow :: String -> Int
 toRow = fst . foldl decode (0, lastRow)
   where decode (r1, r2) ch = if ch == 'F'
@@ -38,10 +27,33 @@ toColumn = fst . foldl decode (0,lastColumn)
   where decode (c1, c2) ch = if ch == 'L'
                              then  (c1 , c2 - div (c2-c1) 2 -1)
                              else  (c1 + 1 + div (c2-c1) 2, c2)
-
+--------------------------------------------------------------------------------
 toSeat :: BoardingPass -> Seat
 toSeat str = (toRow first7, toColumn last3)
       where (first7, last3) = splitAt rowCodeLength str
 
 toID :: Seat ->  ID
 toID (row, col) = row*8 + col
+
+answer1 :: IO Int
+answer1 = do
+  bPasses <- inputIO
+  return$ getMaxID bPasses
+   where getMaxID = foldr max 0 . map (toID . toSeat)
+
+
+{-Part Two-}
+
+sortedIDs :: [BoardingPass] -> [ID]
+sortedIDs = sort . map (toID . toSeat)
+
+deduceMyID :: [ID] -> ID
+deduceMyID ids = snd $ foldr func (lastID, lastID) ids
+  where
+    lastID = last ids
+    func x (current, iD)  = if current - x >= 2 then (x, current -1)  else (x, iD)
+
+answer2 :: IO Int
+answer2 = do
+  bPasses <- inputIO
+  return$ deduceMyID $ sortedIDs bPasses

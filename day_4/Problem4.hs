@@ -1,88 +1,65 @@
 module Problem4 where
-import Control.Monad.State.Lazy
+import Data4 (inputIO)
 
-type Input = String
-type Key = String
+{- Part One -}
 type Value = String
-type Passport = [(Key,Value)]
-type ParseData = State [Passport]  -- State s a
-type Condition = Passport -> Bool
+type Entry = [(Key,Value)]
+type Condition = Entry -> Bool
+{-Entries can contain some of the following data
+  byr (Birth Year)
+  iyr (Issue Year)
+  eyr (Expiration Year)
+  hgt (Height)
+  hcl (Hair Color)
+  ecl (Eye Color)
+  pid (Passport ID)
+  cid (Country ID) -}
+necessaryKeys = ["byr", "iyr", "eyr", "hgt", "hcl", "ecl", "pid"]
 
+hasNecessaryKeys :: Condition
+hasNecessaryKeys entry = and $(`elem` fields)<$>necessaryKeys
+  where fields = map fst entry
 
-{-    --    --    --    --    --    --    --    --    --    --    --    --    -}
-                            {- Actualy program -}
-{-    --    --    --    --    --    --    --    --    --    --    --    --    -}
-exerciceInput = readFile "data4.txt"
+answer1 :: IO Int
+answer1 = do
+  entrs <- inputIO
+  let passports = filter hasNecessaryKeys entrs
+  return $ length passports
 
-answer = exerciceInput >>= (print . length .filter valid . completePassports)
-
-
-{-    --    --    --    --    --    --    --    --    --    --    --    --    -}
-                        {- Parsing input -}
-{-    --    --    --    --    --    --    --    --    --    --    --    --    -}
-getPassport :: Input -> String
-getPassport = takeWhile2 (/='\n')
-
-dropPassport :: Input -> Input
-dropPassport = dropWhile (=='\n') . dropWhile2 (/='\n')
-
-parsePassports :: Input -> ParseData Input
-parsePassports input = if length input > 0 then
-                        do
-                         stack <- get
-                         let passport = makePassport $ getPassport input
-                             rest = dropPassport input
-                         put $ passport:stack
-                         parsePassports rest
-                       else return ""
-
-makePassport :: String -> Passport
-makePassport  = map makeValue . words
-   where makeValue str = (takeWhile (/=':') str, tail . dropWhile (/=':') $ str)
-
-keys = ["byr", "iyr", "eyr", "hgt", "hcl", "ecl", "pid", "cid"]
-necessaryKeys = init keys
-
-complete :: Condition
-complete psport = and $ map (`elem` fields) necessaryKeys
-  where fields = map fst psport
-
-completePassports :: Input -> [Passport]
-completePassports input  =  filter complete $ execState (parsePassports input) []
-
-
-{-    --    --    --    --    --    --    --    --    --    --    --    --    -}
-                          {- Conditions for each field-}
-{-    --    --    --    --    --    --    --    --    --    --    --    --    -}
-valid :: Condition
-valid pport = and $ map ($pport) [byr, eyr, iyr, hgt, hcl, ecl, pid]
-
+{-Part Two-}
+isValid :: Condition
+isValid pport = and $ map ($pport) [byr, eyr, iyr, hgt, hcl, ecl, pid]
 
 byr :: Condition
-byr = inRange 1920 2002 . read . getKey "byr"
+byr = inRange 1920 2002 . read . getValue "byr"
 iyr :: Condition
-iyr = inRange 2010 2020 . read . getKey "iyr"
+iyr = inRange 2010 2020 . read . getValue "iyr"
 eyr :: Condition
-eyr = inRange 2020 2030 . read . getKey "eyr"
+eyr = inRange 2020 2030 . read . getValue "eyr"
 hgt :: Condition
 hgt pport = if inInches then
              inRange 59 76 height
             else if inCm then
              inRange 150 193 height
             else False
-      where height = (read . takeWhile isNum . getKey "hgt" $ pport ) :: Int
-            unit = dropWhile isNum . getKey "hgt" $ pport
+      where height = (read . takeWhile isNum . getValue "hgt" $ pport ) :: Int
+            unit = dropWhile isNum . getValue "hgt" $ pport
             inInches = "in" == unit
             inCm = "cm" == unit
 hcl :: Condition
-hcl = isHairColor . getKey "hcl"
+hcl = isHairColor . getValue "hcl"
 ecl :: Condition
-ecl = isEyeColor . getKey "ecl"
+ecl = isEyeColor . getValue "ecl"
 pid :: Condition
 pid pport = length pnumber == 9 && justDigits pnumber
   where justDigits = and . map isNum
-        pnumber = getKey "pid" pport
+        pnumber = getValue "pid" pport
 
+answer2 :: IO Int
+answer2 = do
+  entrs <- inputIO
+  let passports = filter isValid . filter hasNecessaryKeys $ entrs
+  return $ length passports
 
 {-    --    --    --    --    --    --    --    --    --    --    --    --    -}
 {-    --    --    --    --    Helper functions  --    --    --    --    --    -}
@@ -101,8 +78,8 @@ dropWhile2 cond (x:y:str)
       | not (cond x || cond y) = x:y:str
       | otherwise              = dropWhile2 cond (y:str)
 
-getKey :: String -> Passport -> String
-getKey key = snd . head . dropWhile (\x -> (fst x) /= key)
+getValue :: Key -> [(Key,a)] -> a
+getValue key = snd . head . dropWhile (\x -> (fst x) /= key)
 
 isNum :: Char -> Bool
 isNum = (`elem` "01233456789")
