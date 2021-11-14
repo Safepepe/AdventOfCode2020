@@ -66,9 +66,9 @@ instance Applicative Parser where
 
    -- <*> :: Parser (a -> b) -> Parser a -> Parser b
    pg <*> px = P (\inp ->  (funcs inp) <*> (outputs inp) )
-     where  results x = match pg x
-            funcs   x = (tupleL.fst)<$> results x
-            outputs x = myFold (myAppend) myEmpty $(match px.snd)<$>results x
+     where  results x = match pg x -- [((a -> b), string)]
+            funcs   x = (tupleL.fst) <$> results x -- [((a,c) -> (b,c))]
+            outputs x = myConcat $(match px.snd)<$>results x --[(a,string)]
 
                              {-case parse pg inp of
                              []        -> []
@@ -77,9 +77,9 @@ instance Applicative Parser where
 instance Monad Parser where
    -- (>>=) :: Parser a -> (a -> Parser b) -> Parser b
    p >>= f = P (\inp ->   myConcat $ zipWith ($) (myToList$(match.f)<$>values inp) (myToList$outputs inp) )
-      where  results x = match p x
-             values  x = fst<$>results x
-             outputs x = snd<$>results x
+      where  results x = match p x -- [(a,String)]
+             values  x = fst<$>results x -- [a]
+             outputs x = snd<$>results x -- [String]
              {-case parse p inp of
                            []        -> []
                            [(v,out)] -> parse (f v) out) -}
