@@ -1,116 +1,100 @@
 module Problem7 where
-import Parsing
-import Control.Monad.State.Lazy
-
+import Data7 (inputIO)
+import Data.List (partition)
 type Container = String
 type Content = (Int, Container)
 type Rule = (Container, [Content])
 
 
 {-============================================================================-}
-----------------------------This is the parsing part of the code
+{-+                                Part One                                  +-}
 {-============================================================================-}
-bags = ["bag", "bags","bags,", "bag,", "bags.", "bag."]
-punctuation = ":;,.!?"
+exampleBag = "mirrored magenta"--"shiny gold"
 
-symbols :: Parser ()
-symbols = do many (sat (`elem` punctuation))
-             return ()
-
-word :: Parser String
-word =  token $ many $ sat (/=' ')
-
-
-stopWhenWord :: (String -> Bool) -> Parser [String]
-stopWhenWord cond = do space --get rid of spaces
-                       fstWrd <- word
-                       if cond fstWrd then
-                         return [] --this gets rid of the word
-                       else
-                         (fstWrd:) <$> stopWhenWord cond
-
-getContainer :: Parser Container
-getContainer = do containerWrds <- stopWhenWord (`elem` bags)
-                  space
-                  many $ string "contains" <|> string "contain"
-                  space
-                  return $ unwords containerWrds
-
-content :: Parser Content
-content =  do n <- nat
-              bag <- getContainer
-              symbols --gets rid of commas essentially
-              space --gets rid of spaces
-              return (n,bag)
-
-rule :: Parser Rule
-rule = do bag <- getContainer
-          space
-          contents <- many content
-          return (bag, contents)
-{-============================================================================-}
-----------------------------This is where we actually work at the rule level
-{-============================================================================-}
-
-
-makeRules :: String -> [Rule]
-makeRules  = map fst . concat . map (parse rule) . lines
-
-nextColors :: Container -> [Rule] -> [Container]
-nextColors cont rules  = map snd itsContents
+nextBags:: Container -> [Rule] -> [Container]
+nextBags cont rules  = map snd itsContents
      where itsRules    = filter ((==cont).fst) rules
            itsContents = concat . map snd $ itsRules
 
-allColorsState :: Container -> [Rule] -> State [Container] ()
-allColorsState cont rules = let nextCs = nextColors cont rules in
-                       if length nextCs == 0 then
-                         return ()
+unfold :: (a -> Maybe (b,a)) -> a -> [b]
+unfold f x = case f x of
+              Just (y,seed) -> y: unfold  f seed
+              Nothing       -> []
+
+mergeWith :: Eq a => [a] -> [a] -> [a]
+mergeWith xs stack = foldr (\x s-> if elem x s then s else x:s) stack xs
+
+{- functions used in brute force approach -}
+allBagsIn :: Container -> [Rule] -> [Container]
+allBagsIn bag rules = foldr mergeWith [] $ unfold nextBagsMaybe [bag]
+  where nextBagsMaybe :: [Container] -> Maybe ([Container],[Container])
+        nextBagsMaybe bgs = let nbgs = concat $ (`nextBags` rules)<$> bgs in
+                       if length nbgs > 0 then
+                         Just (nbgs,nbgs)
                        else
-                        do currentColors <- get
-                           let newColors = makeSet $ nextCs ++ currentColors
-                           put newColors
-                           mapM_ (`allColorsState` rules) nextCs
+                         Nothing
+eventuallyContains :: Container -> Container -> [Rule] -> Bool
+eventuallyContains containerBag contentBag rules  = contentBag `elem` allBagsIn containerBag rules
+{- functions used in smarter approach -}
+containsBag :: Container -> Container -> [Rule] -> Bool
+containsBag containerBag contentBag rules  = contentBag `elem` (nextBags containerBag rules)
 
-allColors :: Container -> [Rule] -> [Container]
-allColors cont rules = execState (allColorsState cont rules) []
+previousBags :: Container -> [Rule] -> [Container]
+previousBags bag0 rules = filter (`contains0`bag0) allBags
+  where contains0 x y = containsBag x y rules
+        allBags = fst <$> rules
 
-expand :: Content -> [Rule] -> [Content]
-expand (n,container) rules = map (timesFst n) contentOfOne
-  where itsRuleSet = filter ((==container).fst) rules
-        contentOfOne = snd . head $ itsRuleSet
-        timesFst k (p,q) = (p*k,q)
-
-totalContentCount :: Content -> [Rule] -> Int
-totalContentCount contnt@(n,name) rules =
-                 let fstCntnts = expand contnt rules in
-                 sum (map fst fstCntnts) + (sum $ map (`totalContentCount` rules) fstCntnts)
-
-
+bagsEventuallyContaining :: Container -> [Rule] -> [Container]
+bagsEventuallyContaining bag0 rules = foldr mergeWith [] $ unfold previousBagsMaybe [bag0]
+  where previousBagsMaybe :: [Container] -> Maybe ([Container], [Container])
+        previousBagsMaybe bgs = let pbgs = concat $ (`previousBags` rules)<$>bgs in
+                                if length pbgs > 0 then
+                                  Just (pbgs,pbgs)
+                                else
+                                  Nothing
+{-=-----------------------------------=-}
+answer1 :: IO Int
+answer1 = do
+  rules <- inputIO
+  let bags = fst <$> rules
+      bagsContainingBrute exbg = filter (\x -> (x`eventuallyContains`exbg)rules) bags --Brute force approach
+      bagsContainingSmart exbg = bagsEventuallyContaining exbg rules --Smarter approach
+  return $ length $ bagsContainingSmart exampleBag
 {-============================================================================-}
-makeSetState  :: Eq a => [a] ->  State [a] ()
-makeSetState []     = return ()
-makeSetState (c:cs) = do cleanList <- get
-                         if (c `elem` cleanList) then
-                           do makeSetState cs
-                         else
-                           do put $ c:cleanList
-                              makeSetState cs
-makeSet :: Eq a => [a] -> [a]
-makeSet xs =  snd $ runState (makeSetState xs) []
+{-+                                Part Two                                  +-}
 {-============================================================================-}
-problemBag = "shiny gold"
+{- We could use the State monad, however we won't as the "unfold" function from
+   Part One will suffice for our purposes. -}
+   
+nextContentsOf :: Container -> [Rule] -> [Content] --Unsafe because of head.
+nextContentsOf bag = snd . head . filter ((== bag).fst)
 
-answer2 :: IO ()
-answer2 = do input <- readFile "data7.txt"
-             let rules = makeRules input
-                 problemContent = (1,problemBag)
-                 total = totalContentCount problemContent rules
-             print total
+addUpBags :: [Content] -> [Content]
+addUpBags  = foldr searchAndAdd []
+ where
+   searchAndAdd :: Content -> [Content] -> [Content]
+   searchAndAdd (n,bg) cs =
+     let (cnts, rest) = partition ((==bg).snd) cs
+     in (sum (fst<$>cnts) + n, bg):rest
 
-answer :: IO ()
-answer = do input <- readFile "data7.txt"
-            let rules = makeRules input
-                allbags = filter (/= problemBag) $ map fst rules
-                allColorsPerBag =  map (`allColors` rules) allbags
-                nbags = length . filter (problemBag `elem`) $ allColorsPerBag
-            print nbags
+recursiveBags :: Container -> [Rule] -> [[Content]]
+recursiveBags bag0 rules = unfold nextContentsOfMaybe [(1,bag0)]
+ where
+   multiplyThrough :: Content -> [Content] -> [Content]
+   multiplyThrough (n,bg) ys = (\(p,q) -> (p*n, q)) <$> ys
+   noNew :: [[a]] -> Bool
+   noNew = null . filter (not.null)
+   nextContentsOfMaybe :: [Content] -> Maybe ([Content], [Content])
+   nextContentsOfMaybe conts =
+         let cntntsPerBag = ((`nextContentsOf`rules).snd)<$> conts --[[Content]]
+             newcnts = addUpBags.concat $ zipWith multiplyThrough conts cntntsPerBag
+         in if noNew cntntsPerBag then Nothing else Just (newcnts,newcnts)
+
+totalBagsInsideOf :: Container -> [Rule] -> Int
+totalBagsInsideOf bag0 = sum.map fst.concat.recursiveBags bag0
+
+{-=-----------------------------------=-}
+answer2 :: IO Int
+answer2 = do
+  rules <- inputIO
+  return $ totalBagsInsideOf exampleBag rules
