@@ -12,8 +12,8 @@ type GameLoop = State (Accumulator, PastPositions)
 {-============================================================================-}
 {-+                                Part One                                  +-}
 {-============================================================================-}
-initState = (0,[0]) -- positions start at 0
-
+initState = (0,[]) -- intial position of tape starts at 0
+{-=------------Helper functions-----------------=-}
 getPast :: GameLoop PastPositions
 getPast = get >>= return . snd
 getAcc :: GameLoop Accumulator
@@ -34,7 +34,7 @@ getCurrentPos = do ps <- getPast
                      put (0, [0]) >> return 0
                    else
                      return $ head ps
-
+{-=-------------------------------------=-}
 stepThrough :: Tape -> GameLoop Tape
 stepThrough tape = do current <- getCurrentPos
                       if current >= length tape then -- stop when tape is over
@@ -81,7 +81,7 @@ corrected tape = head correctTapes
   where pastPos       = snd $ runGameOn tape
         changedTapes  = map (`change` tape) pastPos
         correctTapes  = filter isCorrect changedTapes
-        
+
 {-=-----------------------------------=-}
 answer2 :: IO Accumulator
 answer2 = inputIO >>= return.fst.runGameOn.corrected
