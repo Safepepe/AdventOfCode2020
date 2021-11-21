@@ -1,6 +1,7 @@
 module Problem7 where
 import Data7 (inputIO)
 import Data.List (partition)
+
 type Container = String
 type Content = (Int, Container)
 type Rule = (Container, [Content])
@@ -65,7 +66,7 @@ answer1 = do
 {-============================================================================-}
 {- We could use the State monad, however we won't as the "unfold" function from
    Part One will suffice for our purposes. -}
-   
+
 nextContentsOf :: Container -> [Rule] -> [Content] --Unsafe because of head.
 nextContentsOf bag = snd . head . filter ((== bag).fst)
 
