@@ -1,37 +1,139 @@
 module Problem11 where
+import Data11 (inputIO)
 import Control.Monad.State.Lazy
 import GHC.Exts(sortWith)
 import Data.List(groupBy)
---Change the code below ot using the state monad !
---It shouldn't be difficult.
 
 type Row = String
 type Chart = [Row]
 type Position = (Int,Int)
 type ChartState = State Chart
 
-input :: IO Chart
-input =  readFile "data11.txt" >>= return . lines
 
+{-============================================================================-}
+{-+                                Part One                                  +-}
+{-============================================================================-}
+{-
+Rules:
+   1. If a seat is empty (L) and there are no occupied seats adjacent to it,
+      the seat becomes occupied.
+   2. If a seat is occupied (#) and four or more seats adjacent to it are also
+      occupied, the seat becomes empty.
+   3. Otherwise, the seat's state does not change.
+-}
 floorCell    = '.'
 emptyCell    = 'L'
 occupiedCell = '#'
 
-howManyOccupied :: Chart -> Int
-howManyOccupied chrt = length . filter (==occupiedCell) $ concat chrt
+cell :: Position -> ChartState (Maybe Char)
+cell (x,y) = do
+             chrt <- get
+             let xMax = (length.head$chrt) - 1
+                 yMax = length chrt - 1
+             if (x >= 0) && (x <= xMax) && (y>= 0) && (y <= yMax) then
+               return $ Just ((chrt!!y)!!x)
+             else
+               return Nothing
 
-answer2 :: IO Int
-answer2 = input >>= return . howManyOccupied . execState loop
+isEmpty :: Position -> ChartState Bool
+isEmpty pos = do
+              chr <- cell pos
+              return $ chr == (Just emptyCell)
 
-{-===================      Testing code      ===================-}
-testOn :: IO Chart -> (a -> ChartState b) -> a -> IO (b,Chart)
-testOn ioChrt f  a = ioChrt >>= return . runState (f a)
+isOccupied :: Position -> ChartState Bool
+isOccupied pos = do chr <- cell pos
+                    return $ chr == (Just occupiedCell)
 
+adjecentCells :: Position -> ChartState [Char]
+adjecentCells (x,y) = mapM cell adjecents >>= return.deJust.sequence.filter (/= Nothing)
+ where
+   adjecents :: [Position]
+   adjecents = filter (/= (x,y)) $ (,)<$>[x-1,x,x+1]<*>[y-1,y,y+1]
+   deJust :: Maybe [a] -> [a]
+   deJust = foldr (const) [] -- deJust (Just xs) = xs |<-->| deJust Nothing = []
 
-{-===================           Code         ===================-}
+ruleOne :: Position -> ChartState Bool
+ruleOne pos = do
+  freeSeat <- isEmpty pos
+  adjecents <- adjecentCells pos
+  let noOneAdjecent = and$(/=occupiedCell)<$>adjecents
+  if freeSeat && noOneAdjecent then
+    return True
+  else
+    return False
 
-{-===================           Part2         ===================-}
+ruleTwo :: Position -> ChartState Bool
+ruleTwo pos = do
+  occupiedSeat <- isOccupied pos
+  adjecents <- adjecentCells pos
+  let atleastFourOccupied =  (3 <).length$ filter (==occupiedCell) adjecents
+  if occupiedSeat && atleastFourOccupied then
+    return True
+  else
+    return False
 
+willChange :: [(Position -> ChartState Bool)] -> Position -> ChartState Bool
+willChange rules pos = do
+                 bls <- sequence $rules<*>[pos]
+                 return $ or bls
+
+coordsChart :: ChartState [[Position]]
+coordsChart = do chrt <- get
+                 let xMax = length (head chrt) -1
+                     yMax = length chrt -1
+                     yAxis = [0..yMax]
+                     xAxis = [0..xMax]
+                 return $ map (zip xAxis . repeat) yAxis
+
+changesChart :: [(Position -> ChartState Bool)] -> ChartState [[Bool]]
+changesChart rules = do
+               chrt <- get
+               posChart <- coordsChart -- [[(x,y)]]
+               changeMap <- mapM (mapM$willChange rules) posChart
+               return changeMap
+
+applyChanges :: [[Bool]] -> ChartState Chart
+applyChanges chngsChrt = do
+               chrtSt <-get
+               return $ fuse chngsChrt chrtSt
+    where
+      fuse :: [[Bool]] -> Chart -> Chart
+      fuse bls chrt = zipWith (\l1 l2 -> zipWith changeChar l1 l2) bls chrt
+      changeChar :: Bool -> Char -> Char
+      changeChar False ch = ch
+      changeChar True 'L' = '#'
+      changeChar True '#' = 'L'
+      changeChar True _ = 'X'
+
+recursiveChanges :: [(Position -> ChartState Bool)] -> ChartState ()
+recursiveChanges rules = do
+                   chrt <- get
+                   boolChrt <- changesChart rules
+                   let noChanges = not$or$or<$>boolChrt
+                   if noChanges then
+                     return ()
+                   else
+                     applyChanges boolChrt >>= put >> recursiveChanges rules
+
+{-=----------------------------------=-}
+answer1 :: IO Int
+answer1 = do
+         chrt <- inputIO
+         let rules = [ruleOne, ruleTwo]
+             endState = execState (recursiveChanges rules)  chrt
+             numOfOccupiedSeats = length.filter (==occupiedCell).concat$endState
+         return numOfOccupiedSeats
+{-============================================================================-}
+{-+                                Part Two                                  +-}
+{-============================================================================-}
+{-
+Rules:
+   1. If a seat is empty (L) and there are no occupied seats adjacent to it,
+      the seat becomes occupied.
+   2. If a seat is occupied (#) and four or more seats adjacent to it are also
+      occupied, the seat becomes empty.
+   3. Otherwise, the seat's state does not change.
+-}
 --we need to be able to look in 8 directions and recognize the first seat.
 
 data Direction = UpDir | DownDir | RightDir | LeftDir | UpRightDir | UpLeftDir | DownRightDir| DownLeftDir
@@ -53,191 +155,45 @@ look (x,y) dir = do chrt <- get
                       DownLeftDir -> return [(x-d,y+d)| d<-[1..(min (yMax-y) x)]]
                       DownRightDir-> return [(x+d,y+d)| d<-[1..(min (yMax-y) (xMax-x))]]
 
-firstSeat :: [Position] -> ChartState (Maybe Position)
-firstSeat []     = return Nothing
-firstSeat (p:ps) = do chrt  <- get
-                      seat <- isSeat p
-                      if seat then
-                        return $ Just p
-                      else
-                        firstSeat ps
+firstSeat :: [Position] -> ChartState (Maybe Position, Maybe Char)
+firstSeat []     = return (Nothing, Nothing)
+firstSeat (p:ps) = do
+                   ch <- cell p
+                   if ch == Just floorCell then
+                      firstSeat ps
+                   else
+                      return $ (Just p, ch)
 
-lookForSeat :: Position -> Direction -> ChartState (Direction, Maybe Position)
-lookForSeat p dir = look p dir >>= firstSeat >>= (\x -> return (dir, x))
+lookForSeat :: Position -> Direction -> ChartState  (Maybe Char)
+lookForSeat p dir = look p dir >>= firstSeat >>= return.snd
 
-ruleOne :: Position -> ChartState Bool
-ruleOne pos = do occupied <- isOccupied pos
-                 seatsSeen <- mapM (lookForSeat pos) eightDirs
-                 seatsOccupied <- filterM (isJustOccupied.snd) seatsSeen
-                 if occupied && length seatsOccupied >= 5 then
-                   return  True
-                 else
-                   return False
-   where isJustOccupied Nothing  = return False
-         isJustOccupied (Just p) = isOccupied p
+lookAround :: Position -> ChartState [Maybe Char]
+lookAround p =  mapM (lookForSeat p) eightDirs
 
-ruleTwo :: Position -> ChartState Bool
-ruleTwo pos = do empty <- isEmpty pos
-                 seatsSeen <- mapM (lookForSeat pos) eightDirs
-                 seatsNotOccupied <- filterM ((>>=return.not).isJustOccupied.snd) seatsSeen
-                 if empty && length seatsNotOccupied == 8 then
-                   return True
-                 else
-                   return False
-   where isJustOccupied Nothing  = return False
-         isJustOccupied (Just p) = isOccupied p
+newRuleOne :: Position -> ChartState Bool
+newRuleOne pos = do
+  freeSeat <- isEmpty pos
+  visibleSeats <- lookAround pos
+  let noOneVisible = and.map(/=(Just occupiedCell)).filter(/= Nothing)$visibleSeats
+  if freeSeat && noOneVisible then
+    return True
+  else
+    return False
 
-needsToChange :: Position -> ChartState Bool
-needsToChange pos = do r1 <- ruleOne pos
-                       r2 <- ruleTwo pos
-                       if r1 || r2 then
-                        return True
-                       else
-                        return False
-
-allPositions2 :: ChartState [[Position]]
-allPositions2 = do chrt <- get
-                   let xMax = length (head chrt) -1
-                       yMax = length chrt -1
-                       yAxis = [0..yMax]
-                       xAxis = [0..xMax]
-                   return $ map (zip xAxis . repeat) yAxis
-
-changesChart :: ChartState [[Bool]]
-changesChart = do pos <- allPositions2
-                  boolChart <- mapM (mapM needsToChange) pos
-                  return boolChart
-
-applyChanges :: [[Bool]] -> ChartState ()
-applyChanges bools = do chrt <- get
-                        put$ zipWith mergeRows bools chrt
-  where mergeRows bs chs = zipWith mergeCell bs chs
-        mergeCell True '#' = 'L'
-        mergeCell True 'L' = '#'
-        mergeCell False ch = ch
-
-loop :: ChartState ()
-loop = do boolChart <- changesChart
-          let someChange = or . map or $ boolChart
-          if someChange then
-            do applyChanges boolChart
-               loop
-          else
-            return ()
-
-
-{-===================           Part 1         ===================-}
-{- I think I solved this part in the most stupid and complicated way possible...
-
-
-adjecentCells :: Position -> ChartState [Char]
-adjecentCells (x,y) = do uprRow     <- upperRow (x,y)
-                         leftRight <- leftRightCells (x,y)
-                         lwrRow     <- lowerRow (x,y)
-                         return $ uprRow ++ leftRight ++ lwrRow
--}
-cell :: Position -> ChartState Char
-cell (x,y) = do chrt <- get
-                return $ (chrt!!y)!!x
-
-isEmpty :: Position -> ChartState Bool
-isEmpty pos = do chr <- cell pos
-                 return $ chr == emptyCell
-
-isOccupied :: Position -> ChartState Bool
-isOccupied pos = do chr <- cell pos
-                    return $ chr == occupiedCell
-
-isSeat :: Position -> ChartState Bool
-isSeat pos = do empty <- isEmpty pos
-                occupied <- isOccupied pos
-                return $ empty || occupied
-{-
-fourOrMoreOccupied :: Position -> ChartState Bool
-fourOrMoreOccupied pos = do neighbors <- adjecentCells pos
-                            return $ (>=4) . length . filter (=='#') $ neighbors
-
-emptyAdjecentSeats :: Position -> ChartState Bool
-emptyAdjecentSeats pos = do neighbors <- adjecentCells pos
-                            return $ and . map (==emptyCell) . filter (/='.') $ neighbors
-
-becomesOccupied :: Position -> ChartState Bool
-becomesOccupied pos = do empty <- isEmpty pos
-                         emptyneighbors <- emptyAdjecentSeats pos
-                         return $ empty && emptyneighbors
-
-becomesEmpty :: Position -> ChartState Bool
-becomesEmpty pos = do occupied <- isOccupied pos
-                      fourOrMoreNeighborsOccupied <- fourOrMoreOccupied pos
-                      return $ occupied && fourOrMoreNeighborsOccupied
-
-allPositions :: ChartState [(Int,Int)]
-allPositions = do chrt <- get
-                  let ymax = length chrt - 1
-                      xmax = (length.head$chrt) -1
-                  return [(x,y)|x<- [0..xmax], y<- [0..ymax]]
-
-positionsToChange :: ChartState [(Position,Char)]
-positionsToChange = do positions <- allPositions
-                       toOccupy  <- mapM becomesOccupied positions
-                       toEmpty   <- mapM becomesEmpty positions
-                       let posToOccupy = map fst . filter ((==True).snd) $ zip positions toOccupy
-                           posToEmpty  = map fst . filter ((==True).snd) $ zip positions toEmpty
-                           toOccupiedList = zip posToOccupy (repeat '#')
-                           toEmptyList    = zip posToEmpty (repeat 'L')
-                       return $ toOccupiedList ++ toEmptyList
-
-loop :: ChartState ()
-loop = do pstsNchrs <- positionsToChange
-          if length pstsNchrs > 0 then
-            do changeCells pstsNchrs
-               loop
-          else
-            return ()
-
-changeCells ::  [(Position,Char)] -> ChartState ()
-changeCells psNchs = do chrt <- get
-                        let rowOrderedChanges = sortWith (snd.fst) psNchs
-                            groupedPerRow = groupBy (\x y->(snd.fst$x)==(snd.fst$y)) rowOrderedChanges
-                            formatted = map changeFormat groupedPerRow
-                            rowChangesPairs = sortWith (fst) $ completeLst [0..(length chrt -1)] formatted
-                            newChrt = zipWith changeRow rowChangesPairs chrt
-                        put newChrt
-    where changeFormat pps@(((x,y),chr):ps)= (y, map (\((x,y),ch)->(x,ch)) pps)
-          completeLst ns pxs = foldr merge pxs $ zip ns $ repeat []
-          merge (n,pxxs) lst = if n`elem`(map fst lst) then lst else (n,pxxs):lst
-
-changeRow :: (Int,[(Int, Char)]) -> Row -> Row
-changeRow (n, posChrs) rw  = foldr oneChange rw posChrs
-    where oneChange (x,chr) row = (take x row) ++ (chr:(drop (x+1) row))
-
-upperRow :: Position -> ChartState [Char]
-upperRow (x,y) = do chrt <- get
-                    if y>0 && x>0 && x < ((length.head$chrt)-1) then
-                      return $ take 3.drop (x-1)$ chrt!!(y-1)
-                    else
-                      if y>0 && (x==0 || x== (length.head$chrt) -1) then
-                        return $ take 2.drop (x-1)$ chrt!!(y-1)
-                      else
-                        return []
-
-lowerRow :: Position -> ChartState [Char]
-lowerRow (x,y) = do chrt <- get
-                    if (y+1)<length chrt && x>0 && (x+1) < (length.head$chrt) then
-                      return $ take 3.drop (x-1)$ chrt!!(y+1)
-                    else
-                      if y< (length chrt -1) && (x==0 || x==(length.head$chrt)-1) then
-                        return $ take 2.drop (x-1)$ chrt!!(y+1)
-                      else
-                        return []
-
-leftRightCells :: Position -> ChartState [Char]
-leftRightCells (x,y) = do chrt <- get
-                          if x>0 && x < (length.head$chrt)-1 then
-                            return $ ((chrt!!y)!!(x-1)):[(chrt!!y)!!(x+1)]
-                          else
-                            if x==0 then
-                              return $ [(chrt!!y)!!(x+1)]
-                            else
-                              return $ [(chrt!!y)!!(x-1)]
--}
+newRuleTwo :: Position -> ChartState Bool
+newRuleTwo pos = do
+  occupiedSeat <- isOccupied pos
+  visibleSeats <- lookAround pos
+  let atleastFourOccupied =  (4 <).length.filter(==(Just occupiedCell))$visibleSeats
+  if occupiedSeat && atleastFourOccupied then
+    return True
+  else
+    return False
+{-=----------------------------------=-}
+answer2 :: IO Int
+answer2 = do
+         chrt <- inputIO
+         let rules = [newRuleOne, newRuleTwo]
+             endState = execState (recursiveChanges rules)  chrt
+             numOfOccupiedSeats = length.filter (==occupiedCell).concat$endState
+         return numOfOccupiedSeats

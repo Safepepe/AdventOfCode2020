@@ -13,10 +13,10 @@ sortedInput = inputIO >>= return.(0:).addPcAdaptor
     addPcAdaptor xs = let maxAdaptor = foldr max 0 xs in sort $ (maxAdaptor +3):xs
 
 --we assume that our list is sorted.
-getDistro :: [Int] -> (Maybe Int,(Int,Int,Int,Int))
-getDistro []  = (Nothing,(0,0,0,0))
-getDistro [x] = (Nothing,(0,0,0,0))
-getDistro xs  = foldr countJumps (Just 0,(0,0,0,0)) . reverse $ xs
+adaptorChainComposition :: [Int] -> (Maybe Int,(Int,Int,Int,Int))
+adaptorChainComposition []  = (Nothing,(0,0,0,0)) --Chain can't be made
+adaptorChainComposition [x] = (Nothing,(0,0,0,0)) --Chain can't be made
+adaptorChainComposition xs  = foldr countJumps (Just 0,(0,0,0,0)) . reverse $ xs
  where
    countJumps _    (Nothing, (d0,d1,d2,d3))  = (Nothing, (d0,d1,d2,d3))
    countJumps next (Just past,(d0,d1,d2,d3)) = case next - past of
@@ -29,7 +29,7 @@ getDistro xs  = foldr countJumps (Just 0,(0,0,0,0)) . reverse $ xs
 answer1 :: IO (Maybe Int)
 answer1 = do
   adapters <- sortedInput
-  let (pc, (d0,d1,d2,d3)) = getDistro adapters
+  let (pc, (d0,d1,d2,d3)) = adaptorChainComposition adapters
   if pc == Nothing then
     return Nothing
   else
@@ -42,20 +42,24 @@ type Adaptor = Int
 type Pair = (NumberOfArrangements, [Adaptor])
 type Answer = State (Pair,Pair,Pair)
 
+{-We consider a increasing list of adapters and an extra adaptor lesser than all
+the adaptors in the list. Assuming we know the NumberOfArrangements of the initial
+list of adaptors, what would be the number of arrangements of that list if we add
+the lesser adaptor to it? -}
 addLesserAdaptor :: Adaptor -> Answer ()
-addLesserAdaptor a0 =
+addLesserAdaptor adaptr =
   do
     (p1,p2,p3) <- get
-    let cond1 = a0`canBeAddedTo`p1
-        cond2 = a0`canBeAddedTo`p2
-        cond3 = a0`canBeAddedTo`p3
+    let cond1 = adaptr`canBeAddedTo`p1
+        cond2 = adaptr`canBeAddedTo`p2
+        cond3 = adaptr`canBeAddedTo`p3
     if cond3 then
-      put ((fst p1 + fst p2 + fst p3, a0 : snd p1), p1, p2)
+      put ((fst p1 + fst p2 + fst p3, adaptr : snd p1), p1, p2)
     else
       if cond2 then
-        put ((fst p1 + fst p2 , a0 : snd p1), p1 , p2)
+        put ((fst p1 + fst p2 , adaptr : snd p1), p1 , p2)
       else
-        put ((fst p1, a0 : snd p1), p1 , p2)
+        put ((fst p1, adaptr : snd p1), p1 , p2)
   where
     canBeAddedTo :: Adaptor -> Pair -> Bool
     canBeAddedTo a0 (val, [])     = True
