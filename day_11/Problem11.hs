@@ -17,7 +17,7 @@ type ChartState = State Chart
 Rules:
    1. If a seat is empty (L) and there are no occupied seats adjacent to it,
       the seat becomes occupied.
-   2. If a seat is occupied (#) and four or more seats adjacent to it are also
+   2. If a seat is occupied (#) and four or more seats ADJECENT to it are also
       occupied, the seat becomes empty.
    3. Otherwise, the seat's state does not change.
 -}
@@ -130,7 +130,7 @@ answer1 = do
 Rules:
    1. If a seat is empty (L) and there are no occupied seats adjacent to it,
       the seat becomes occupied.
-   2. If a seat is occupied (#) and four or more seats adjacent to it are also
+   2. If a seat is occupied (#) and five or more seats VISIBLE to it are also
       occupied, the seat becomes empty.
    3. Otherwise, the seat's state does not change.
 -}
@@ -155,20 +155,19 @@ look (x,y) dir = do chrt <- get
                       DownLeftDir -> return [(x-d,y+d)| d<-[1..(min (yMax-y) x)]]
                       DownRightDir-> return [(x+d,y+d)| d<-[1..(min (yMax-y) (xMax-x))]]
 
-firstSeat :: [Position] -> ChartState (Maybe Position, Maybe Char)
-firstSeat []     = return (Nothing, Nothing)
+firstSeat :: [Position] -> ChartState (Maybe Char)
+firstSeat []     = return Nothing
 firstSeat (p:ps) = do
                    ch <- cell p
                    if ch == Just floorCell then
                       firstSeat ps
                    else
-                      return $ (Just p, ch)
-
-lookForSeat :: Position -> Direction -> ChartState  (Maybe Char)
-lookForSeat p dir = look p dir >>= firstSeat >>= return.snd
-
+                      return $ ch
 lookAround :: Position -> ChartState [Maybe Char]
 lookAround p =  mapM (lookForSeat p) eightDirs
+  where
+    lookForSeat :: Position -> Direction -> ChartState  (Maybe Char)
+    lookForSeat p dir = look p dir >>= firstSeat
 
 newRuleOne :: Position -> ChartState Bool
 newRuleOne pos = do
