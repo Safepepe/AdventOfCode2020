@@ -1,29 +1,75 @@
 module Problem20 where
-import Parsing
-import qualified Data.IntMap.Lazy as M
+import Data20 (inputIO)
 
 type Image = [String]
-type Tile = (Int, Image)
-type ImageArray = M.IntMap Image
+showFunc :: Image -> IO ()
+showFunc []     = return ()
+showFunc (x:xs) = do putStrLn.concat$(:" ")<$>x
+                     showFunc xs
+{-============================================================================-}
+{-+                                Part One                                  +-}
+{-============================================================================-}
+data Tree a = Node a [Tree a]
+  deriving(Show, Eq)
+
+fitTogether :: Tile -> Tile -> Bool
+fitTogether (id1,im1) (id2,im2) =  or$(==)<$>potBorders<*>borders im2
+  where
+    borders img = head img : last img : (head<$>img) : [(last<$>img)]
+    potBorders = borders im1 ++ (reverse<$>borders im1)
+
+unfold :: (a -> Maybe (b,a)) -> a -> [b]
+unfold f x = case f x of
+              Just (y,seed) -> y: unfold  f seed
+              Nothing       -> []
+
+attachStep :: (Tree Tile, [Tile]) -> Maybe (Tree Tile, [Tile])
+attachStep (_, [])    = Nothing
+attachStep (t , rest) = if length newRest < length rest then
+                            Just (foldr tMerge t nSubTrees, newRest)
+                        else
+                            Nothing
+  where
+    (nSubTrees,newRest) = foldr attachToLeaf (leafs t, []) rest
+{-
+tFit :: Tree Tile -> Tile -> Tree Tile
+tFit (Node tl1 ts) tl2 = if tl1`fitsWith`tl2 then
+                           Node tl1 ((Node tl2 []):ts)
+                         else
+                           Node tl1 ts
+-}
 
 
+leafs :: Tree a -> [Tree a]
+leafs (Node x []) = [Node x []]
+leafs (Node x ts) = concat$leafs<$>ts
 
-input1 :: IO ImageArray
-input1 = readFile "data20.txt" >>= return.fst.head.parse inputP
+tMerge :: Eq a => Tree a -> Tree a -> Tree a
+tMerge greatT      (Node y [])  = greatT
+tMerge (Node x []) (Node y yts) = if x == y then Node y yts else Node x []
+tMerge (Node x ts)  t1          = Node x ((`tMerge`t1)<$>ts)
 
-answer1 :: IO ()
-answer1 = do imgArray <- input1
-             print $ M.lookup 1217 imgArray --to test if the code worked.
+attachToLeaf :: Tile ->([Tree Tile], [Tile]) -> ([Tree Tile], [Tile])
+attachToLeaf tl ([], rest) = ([],tl:rest)
+attachToLeaf tl (ts, rest) = let (nts,usedTl) = foldr (accumFit tl) ([],False) ts in
+                              if usedTl then (nts,rest) else (ts, tl:rest)
 
+{-
+rotateCW :: Image -> Image
+rotateCW [] = []
+rotateCW xs = map reverse $ foldr (zipWith (:)) emptys xs
+  where
+    emptys = replicate (length.head$xs) []
 
-{-====================Parsing bit of code ====================================-}
-tileP :: Parser Tile
-tileP = do string "Tile"*> space
-           n <- nat
-           token $ char ':'
-           image <- some $ token $ some $ char '#' <|> char '.'
-           return (n,image)
+rotateCCW :: Image -> Image
+rotateCCW [] = []
+rotateCCW xs = reverse $ foldr (zipWith (:)) emptys xs
+  where
+    emptys = replicate (length.head$xs) []
 
-inputP :: Parser ImageArray
-inputP = do tiles <- some tileP
-            return $ M.fromList tiles
+flipX :: Image -> Image
+flipX = map reverse
+
+flipY :: Image -> Image
+flipY = reverse
+-}
